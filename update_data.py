@@ -4,260 +4,345 @@ from pathlib import Path
 
 import requests
 
-# ESPN Premier League
-ESPN_URL = (
-    "https://site.api.espn.com/apis/site/v2/"
-    "sports/soccer/eng.1/teams/360/schedule"
-)
 
 OUTPUT_FILE = Path("twk_data.json")
 
+BASE_URL = "https://footballapi.pulselive.com/football"
 
-def get_schedule():
-    print("🔴 TWK United Data Updater")
-    print("=" * 50)
-    print("Fetching Manchester United schedule from ESPN...")
+HEADERS = {
+    "Origin": "https://www.premierleague.com",
+    "Referer": "https://www.premierleague.com/",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/153.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+}
+
+
+def get_current_season():
+    print("🔴 Getting current Premier League season...")
+
+    url = f"{BASE_URL}/competitions/1/compseasons"
 
     response = requests.get(
-        ESPN_URL,
+        url,
+        headers=HEADERS,
+        params={
+            "pageSize": 20,
+            "page": 0,
+        },
         timeout=30,
-        headers={
-            "User-Agent": "TWK-United/1.0"
-        }
     )
 
-    print(f"HTTP Status: {response.status_code}")
+    print(f"Season API HTTP Status: {response.status_code}")
+
     response.raise_for_status()
 
-    return response.json()
+    data = response.json()
 
+    seasons = data.get("content", [])
 
-def main():
-    try:
-        data = get_schedule()
-    except Exception as error:
-        print(f"❌ ESPN request failed: {error}")
-        raise
+    if not seasons:
+        raise RuntimeError("No Premier League seasons returned.")
 
-    events = data.get("events", [])
+    # Find 2026/27 first
+    for season in seasons:
+        label = str(season.get("label", ""))
 
-    print(f"Total events received: {len(events)}")
-
-    now_timestamp = int(datetime.now(timezone.utc).timestamp())
-
-    future_matches = []
-
-    for event in events:
-        event_date = event.get("date")
-
-        if not event_date:
-            continue
-
-        try:
-            match_time = datetime.fromisoformat(
-                event_date.replace("Z", "+00:00")
+        if "2026/27" in label:
+            print(
+                f"✅ Current season found: "
+                f"{label} (ID {season.get('id')})"
             )
-        except ValueError:
+            return season["id"]
+
+    # Fallback to first season
+    season = seasons[0]
+
+    print(
+        f"⚠️ 2026/27 not found. "
+        f"Using {season.get('label')} "
+        f"(ID {season.get('id')})"
+    )
+
+    return season["id"]
+
+
+def get_fixtures(season_id):
+    print()
+    print("Fetching Premier League fixtures...")
+
+    url = f"{BASE_URL}/fixtures"
+
+    response = requests.get(
+        url,
+        headers=HEADERS,
+        params={
+            "comps": 1,
+            "compSeasons": season_id,
+            "page": 0,
+            "pageSize": 500,
+            "sort": "asc",
+            "altIds": "true",
+        },
+        timeout=30,
+    )
+
+    print(f"Fixtures API HTTP Status: {response.status_code}")
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    fixtures = data.get("content", [])
+
+    print(f"Total fixtures received: {len(fixtures)}")
+
+    return fixtures
+
+
+def parse_kickoff(fixture):
+    kickoff = fixture.get("kickoff")
+
+    if not kickoff:
+        return None
+
+    millis = kickoff.get("millis")
+
+    if millis:
+        try:
+            return datetime.fromtimestamp(
+                int(millis) / 1000,
+                tz=timezone.utc,
+            )
+        except Exception:
+            pass
+
+    iso = kickoff.get("iso")
+
+    if iso:
+        try:
+            return datetime.fromisoformat(
+                iso.replace("Z", "+00:00")
+            )
+        except Exception:
+            pass
+
+    return None
+
+
+def find_next_manchester_united_fixture(fixtures):
+    now = datetime.now(timezone.utc)
+
+    future = []
+
+    for fixture in fixtures:
+        teams = fixture.get("teams", [])
+
+        if len(teams) < 2:
             continue
-
-        # Only future matches
-        if int(match_time.timestamp()) <= now_timestamp:
-            continue
-
-        competitions = event.get("competitions", [])
-
-        if not competitions:
-            continue
-
-        competition = competitions[0]
-        competitors = competition.get("competitors", [])
 
         home = None
         away = None
 
-        for competitor in competitors:
-            if competitor.get("homeAway") == "home":
-                home = competitor
-            elif competitor.get("homeAway") == "away":
-                away = competitor
+        for team in teams:
+            if team.get("team", {}).get("name") == "Manchester United":
+                if team.get("home"):
+                    home = team
+                else:
+                    away = team
+
+        if not home and not away:
+            continue
+
+        kickoff = parse_kickoff(fixture)
+
+        if not kickoff:
+            continue
+
+        if kickoff <= now:
+            continue
 
         if not home or not away:
             continue
 
-        home_team = home.get("team", {})
-        away_team = away.get("team", {})
-
-        home_name = home_team.get(
-            "displayName",
-            home_team.get("name", "")
+        future.append(
+            {
+                "fixture": fixture,
+                "home": home,
+                "away": away,
+                "kickoff": kickoff,
+            }
         )
 
-        away_name = away_team.get(
-            "displayName",
-            away_team.get("name", "")
-        )
-
-        future_matches.append({
-            "event": event,
-            "competition": competition,
-            "home": home,
-            "away": away,
-            "match_time": match_time,
-            "home_name": home_name,
-            "away_name": away_name
-        })
-
-    future_matches.sort(
-        key=lambda item: item["match_time"]
+    future.sort(
+        key=lambda item: item["kickoff"]
     )
 
-    result = {
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
-        "source": "ESPN Public Soccer API",
-        "nextMatch": None
-    }
+    return future[0] if future else None
 
-    if not future_matches:
-        print("⚠️ No future Manchester United match found.")
 
-        OUTPUT_FILE.write_text(
-            json.dumps(
-                result,
-                indent=2,
-                ensure_ascii=False
-            ),
-            encoding="utf-8"
-        )
-
-        print("✅ twk_data.json created")
-        return
-
-    item = future_matches[0]
-
-    event = item["event"]
-    competition = item["competition"]
+def build_result(item):
+    fixture = item["fixture"]
     home = item["home"]
     away = item["away"]
-    match_time = item["match_time"]
+    kickoff = item["kickoff"]
 
     home_team = home.get("team", {})
     away_team = away.get("team", {})
 
-    # Venue
-    venue_name = ""
-    venue_city = ""
+    venue = fixture.get("ground", {})
 
-    venue = competition.get("venue")
+    competition = fixture.get(
+        "competition",
+        {}
+    )
 
-    if venue:
-        venue_name = venue.get(
-            "fullName",
-            venue.get("displayName", "")
-        )
+    return {
+        "fixtureId": fixture.get("id"),
 
-        address = venue.get("address", {})
-
-        if address:
-            venue_city = address.get("city", "")
-
-    # Competition name
-    competition_name = ""
-
-    if competition.get("league"):
-        competition_name = competition["league"].get(
-            "name",
-            ""
-        )
-
-    if not competition_name:
-        competition_name = "Premier League"
-
-    result["nextMatch"] = {
-        "fixtureId": event.get("id"),
-
-        "dateUtc": event.get("date"),
+        "dateUtc": kickoff.isoformat(),
 
         "timestamp": int(
-            match_time.timestamp()
+            kickoff.timestamp()
         ),
 
-        "status": event.get(
+        "status": fixture.get(
             "status",
-            {}
-        ).get(
-            "type",
-            {}
-        ).get(
-            "name"
+            "U"
         ),
 
-        "competition": competition_name,
+        "competition": competition.get(
+            "name",
+            "Premier League"
+        ),
 
-        "round": event.get(
-            "season",
-            {}
-        ).get(
-            "slug"
+        "round": (
+            fixture.get("gameweek", {})
+            .get("gameweek")
         ),
 
         "homeTeam": home_team.get(
-            "displayName",
-            home_team.get("name", "")
+            "name"
         ),
 
         "awayTeam": away_team.get(
-            "displayName",
-            away_team.get("name", "")
+            "name"
         ),
 
-        "homeLogo": home_team.get("logo"),
+        "homeLogo": home_team.get(
+            "club",
+            {}
+        ).get(
+            "shortName"
+        ),
 
-        "awayLogo": away_team.get("logo"),
+        "awayLogo": away_team.get(
+            "club",
+            {}
+        ).get(
+            "shortName"
+        ),
 
-        "venue": venue_name,
+        "venue": venue.get(
+            "name",
+            ""
+        ),
 
-        "city": venue_city
+        "city": venue.get(
+            "city",
+            ""
+        ),
     }
+
+
+def main():
+    print("🔴 TWK United Data Updater")
+    print("=" * 50)
+
+    season_id = get_current_season()
+
+    fixtures = get_fixtures(
+        season_id
+    )
+
+    next_match = (
+        find_next_manchester_united_fixture(
+            fixtures
+        )
+    )
+
+    result = {
+        "updatedAt": datetime.now(
+            timezone.utc
+        ).isoformat(),
+
+        "source": (
+            "Premier League "
+            "Official Public Data"
+        ),
+
+        "nextMatch": None,
+    }
+
+    if not next_match:
+        print()
+        print(
+            "⚠️ No upcoming "
+            "Manchester United fixture found."
+        )
+
+    else:
+        result["nextMatch"] = build_result(
+            next_match
+        )
+
+        match = result["nextMatch"]
+
+        print()
+        print("✅ NEXT MATCH FOUND")
+        print("=" * 50)
+
+        print(
+            f"🏠 Home : "
+            f"{match['homeTeam']}"
+        )
+
+        print(
+            f"✈️ Away : "
+            f"{match['awayTeam']}"
+        )
+
+        print(
+            f"📅 Date : "
+            f"{match['dateUtc']}"
+        )
+
+        print(
+            f"🏟 Venue: "
+            f"{match['venue']}"
+        )
 
     OUTPUT_FILE.write_text(
         json.dumps(
             result,
             indent=2,
-            ensure_ascii=False
+            ensure_ascii=False,
         ),
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     print()
-    print("✅ NEXT MATCH FOUND")
-    print("=" * 50)
-
-    print(
-        f"🏠 Home : "
-        f"{result['nextMatch']['homeTeam']}"
-    )
-
-    print(
-        f"✈️ Away : "
-        f"{result['nextMatch']['awayTeam']}"
-    )
-
-    print(
-        f"📅 Date : "
-        f"{result['nextMatch']['dateUtc']}"
-    )
-
-    print(
-        f"🏟 Venue: "
-        f"{result['nextMatch']['venue']}"
-    )
-
+    print("✅ twk_data.json created")
     print()
+
     print(
         json.dumps(
             result,
             indent=2,
-            ensure_ascii=False
+            ensure_ascii=False,
         )
     )
 
