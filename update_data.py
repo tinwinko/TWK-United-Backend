@@ -12,27 +12,22 @@ ESPN_URL = (
 
 OUTPUT_FILE = Path("twk_data.json")
 
+SEARCH_DAYS = 120
+CHUNK_DAYS = 7
 
-def get_scoreboard():
 
-    today = datetime.now(timezone.utc).date()
-
-    end_date = today + timedelta(days=120)
+def get_scoreboard(start_date, end_date):
 
     params = {
         "dates": (
-            f"{today.strftime('%Y%m%d')}-"
+            f"{start_date.strftime('%Y%m%d')}-"
             f"{end_date.strftime('%Y%m%d')}"
         ),
-        "limit": 200
+        "limit": 100
     }
 
-    print("🔴 TWK United Data Updater")
-    print("=" * 45)
-
     print(
-        f"Searching: "
-        f"{params['dates']}"
+        f"Searching {params['dates']}..."
     )
 
     response = requests.get(
@@ -48,22 +43,75 @@ def get_scoreboard():
 
 def main():
 
-    data = get_scoreboard()
-
-    events = data.get(
-        "events",
-        []
-    )
-
-    print(
-        f"API returned {len(events)} events"
-    )
+    print("🔴 TWK United Data Updater")
+    print("=" * 50)
 
     now = datetime.now(timezone.utc)
 
+    search_start = now.date()
+
+    search_end = (
+        search_start +
+        timedelta(days=SEARCH_DAYS)
+    )
+
+    all_events = []
+
+    current_date = search_start
+
+    while current_date < search_end:
+
+        chunk_end = min(
+            current_date +
+            timedelta(days=CHUNK_DAYS - 1),
+            search_end
+        )
+
+        try:
+
+            data = get_scoreboard(
+                current_date,
+                chunk_end
+            )
+
+            events = data.get(
+                "events",
+                []
+            )
+
+            print(
+                f"  → {len(events)} event(s)"
+            )
+
+            all_events.extend(events)
+
+        except requests.HTTPError as error:
+
+            print(
+                f"⚠️ Request failed: {error}"
+            )
+
+        current_date = (
+            chunk_end +
+            timedelta(days=1)
+        )
+
+
+    print()
+    print(
+        f"Total events collected: "
+        f"{len(all_events)}"
+    )
+
+
     future_matches = []
 
-    for event in events:
+    now_timestamp = int(
+        now.timestamp()
+    )
+
+
+    for event in all_events:
 
         competitions = event.get(
             "competitions",
@@ -94,17 +142,29 @@ def main():
         if not home or not away:
             continue
 
-        home_name = (
-            home.get("team", {})
-            .get("displayName", "")
+
+        home_team = home.get(
+            "team",
+            {}
         )
 
-        away_name = (
-            away.get("team", {})
-            .get("displayName", "")
+        away_team = away.get(
+            "team",
+            {}
         )
 
-        # Only Manchester United matches
+        home_name = home_team.get(
+            "displayName",
+            ""
+        )
+
+        away_name = away_team.get(
+            "displayName",
+            ""
+        )
+
+
+        # Manchester United only
         if (
             "Manchester United" not in home_name
             and
@@ -112,12 +172,14 @@ def main():
         ):
             continue
 
+
         event_date = event.get(
             "date"
         )
 
         if not event_date:
             continue
+
 
         try:
 
@@ -132,8 +194,13 @@ def main():
 
             continue
 
-        if match_time <= now:
+
+        if (
+            int(match_time.timestamp())
+            <= now_timestamp
+        ):
             continue
+
 
         future_matches.append(
             {
@@ -146,7 +213,6 @@ def main():
         )
 
 
-    # Sort nearest first
     future_matches.sort(
         key=lambda item:
         item["match_time"]
@@ -212,7 +278,6 @@ def main():
 
     # Venue
     venue_name = ""
-
     venue_city = ""
 
     venue = competition.get(
@@ -221,12 +286,10 @@ def main():
 
     if venue:
 
-        venue_info = venue.get(
+        venue_name = venue.get(
             "fullName",
             ""
         )
-
-        venue_name = venue_info
 
         address = venue.get(
             "address",
@@ -237,17 +300,6 @@ def main():
             "city",
             ""
         )
-
-
-    # Competition name
-    league_name = (
-        competition
-        .get("type", {})
-        .get(
-            "text",
-            "Premier League"
-        )
-    )
 
 
     result["nextMatch"] = {
@@ -270,7 +322,7 @@ def main():
             .get("name"),
 
         "competition":
-            league_name,
+            "Premier League",
 
         "round":
             event
@@ -317,7 +369,7 @@ def main():
 
     print()
     print("✅ NEXT MATCH FOUND")
-    print("=" * 45)
+    print("=" * 50)
 
     print(
         json.dumps(
