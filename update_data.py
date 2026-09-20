@@ -1,111 +1,178 @@
 import json
-import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
 
 
-API_URL = "https://v3.football.api-sports.io/fixtures"
-TEAM_ID = 33
+ESPN_URL = (
+    "https://site.api.espn.com/apis/site/v2/"
+    "sports/soccer/eng.1/scoreboard"
+)
 
 OUTPUT_FILE = Path("twk_data.json")
 
 
-def get_fixtures():
+def get_scoreboard():
 
-    api_key = os.environ["API_FOOTBALL_KEY"]
+    today = datetime.now(timezone.utc).date()
 
-    now = datetime.now(timezone.utc)
+    end_date = today + timedelta(days=120)
 
-    from_date = now.date()
-    to_date = (now + timedelta(days=120)).date()
+    params = {
+        "dates": (
+            f"{today.strftime('%Y%m%d')}-"
+            f"{end_date.strftime('%Y%m%d')}"
+        ),
+        "limit": 200
+    }
 
-    print(f"Searching fixtures from {from_date} to {to_date}...")
+    print("🔴 TWK United Data Updater")
+    print("=" * 45)
+
+    print(
+        f"Searching: "
+        f"{params['dates']}"
+    )
 
     response = requests.get(
-        API_URL,
-        headers={
-            "x-apisports-key": api_key
-        },
-        params={
-            "team": TEAM_ID,
-            "from": str(from_date),
-            "to": str(to_date)
-        },
+        ESPN_URL,
+        params=params,
         timeout=30
     )
 
     response.raise_for_status()
 
-    data = response.json()
-
-    if data.get("errors"):
-        print("⚠️ API errors:")
-        print(
-            json.dumps(
-                data["errors"],
-                indent=2,
-                ensure_ascii=False
-            )
-        )
-
-    print(
-        f"API returned {data.get('results', 0)} fixture(s)"
-    )
-
-    return data.get("response", [])
+    return response.json()
 
 
 def main():
 
-    print("🔴 TWK United Data Updater")
-    print("=" * 45)
+    data = get_scoreboard()
 
-    fixtures = get_fixtures()
-
-    result = {
-        "updatedAt": datetime.now(
-            timezone.utc
-        ).isoformat(),
-        "nextMatch": None
-    }
-
-    now_timestamp = int(
-        datetime.now(timezone.utc).timestamp()
+    events = data.get(
+        "events",
+        []
     )
 
-    future_fixtures = []
+    print(
+        f"API returned {len(events)} events"
+    )
 
-    for fixture in fixtures:
+    now = datetime.now(timezone.utc)
 
-        fixture_info = fixture.get(
-            "fixture",
-            {}
+    future_matches = []
+
+    for event in events:
+
+        competitions = event.get(
+            "competitions",
+            []
         )
 
-        timestamp = fixture_info.get(
-            "timestamp"
+        if not competitions:
+            continue
+
+        competition = competitions[0]
+
+        competitors = competition.get(
+            "competitors",
+            []
         )
 
-        status = (
-            fixture_info
-            .get("status", {})
-            .get("short", "")
+        home = None
+        away = None
+
+        for team in competitors:
+
+            if team.get("homeAway") == "home":
+                home = team
+
+            elif team.get("homeAway") == "away":
+                away = team
+
+        if not home or not away:
+            continue
+
+        home_name = (
+            home.get("team", {})
+            .get("displayName", "")
         )
 
+        away_name = (
+            away.get("team", {})
+            .get("displayName", "")
+        )
+
+        # Only Manchester United matches
         if (
-            timestamp
-            and timestamp > now_timestamp
-            and status not in ["CANC", "PST"]
+            "Manchester United" not in home_name
+            and
+            "Manchester United" not in away_name
         ):
-            future_fixtures.append(fixture)
+            continue
+
+        event_date = event.get(
+            "date"
+        )
+
+        if not event_date:
+            continue
+
+        try:
+
+            match_time = datetime.fromisoformat(
+                event_date.replace(
+                    "Z",
+                    "+00:00"
+                )
+            )
+
+        except ValueError:
+
+            continue
+
+        if match_time <= now:
+            continue
+
+        future_matches.append(
+            {
+                "event": event,
+                "competition": competition,
+                "home": home,
+                "away": away,
+                "match_time": match_time
+            }
+        )
 
 
-    if not future_fixtures:
+    # Sort nearest first
+    future_matches.sort(
+        key=lambda item:
+        item["match_time"]
+    )
+
+
+    result = {
+        "updatedAt":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
+
+        "source":
+            "ESPN Public Soccer API",
+
+        "nextMatch":
+            None
+    }
+
+
+    if not future_matches:
 
         print()
-        print("❌ No upcoming fixture found.")
+        print(
+            "❌ No upcoming Manchester United match found."
+        )
 
         OUTPUT_FILE.write_text(
             json.dumps(
@@ -116,86 +183,125 @@ def main():
             encoding="utf-8"
         )
 
-        print("✅ twk_data.json created")
+        print(
+            "✅ twk_data.json created"
+        )
 
         return
 
 
-    # Sort by kickoff time
-    future_fixtures.sort(
-        key=lambda fixture:
-            fixture["fixture"]["timestamp"]
-    )
+    item = future_matches[0]
 
-    fixture = future_fixtures[0]
+    event = item["event"]
+    competition = item["competition"]
+    home = item["home"]
+    away = item["away"]
+    match_time = item["match_time"]
 
-    fixture_info = fixture.get(
-        "fixture",
+
+    home_team = home.get(
+        "team",
         {}
     )
 
-    teams = fixture.get(
-        "teams",
+    away_team = away.get(
+        "team",
         {}
     )
 
-    league = fixture.get(
-        "league",
-        {}
-    )
 
-    venue = fixture_info.get(
+    # Venue
+    venue_name = ""
+
+    venue_city = ""
+
+    venue = competition.get(
         "venue"
-    ) or {}
+    )
+
+    if venue:
+
+        venue_info = venue.get(
+            "fullName",
+            ""
+        )
+
+        venue_name = venue_info
+
+        address = venue.get(
+            "address",
+            {}
+        )
+
+        venue_city = address.get(
+            "city",
+            ""
+        )
+
+
+    # Competition name
+    league_name = (
+        competition
+        .get("type", {})
+        .get(
+            "text",
+            "Premier League"
+        )
+    )
 
 
     result["nextMatch"] = {
 
         "fixtureId":
-            fixture_info.get("id"),
+            event.get("id"),
 
         "dateUtc":
-            fixture_info.get("date"),
+            event.get("date"),
 
         "timestamp":
-            fixture_info.get("timestamp"),
+            int(
+                match_time.timestamp()
+            ),
 
         "status":
-            fixture_info
+            event
             .get("status", {})
-            .get("short"),
+            .get("type", {})
+            .get("name"),
 
         "competition":
-            league.get("name"),
+            league_name,
 
         "round":
-            league.get("round"),
+            event
+            .get("season", {})
+            .get("slug"),
 
         "homeTeam":
-            teams
-            .get("home", {})
-            .get("name"),
+            home_team.get(
+                "displayName"
+            ),
 
         "awayTeam":
-            teams
-            .get("away", {})
-            .get("name"),
+            away_team.get(
+                "displayName"
+            ),
 
         "homeLogo":
-            teams
-            .get("home", {})
-            .get("logo"),
+            home_team.get(
+                "logo"
+            ),
 
         "awayLogo":
-            teams
-            .get("away", {})
-            .get("logo"),
+            away_team.get(
+                "logo"
+            ),
 
         "venue":
-            venue.get("name"),
+            venue_name,
 
         "city":
-            venue.get("city")
+            venue_city
     }
 
 
