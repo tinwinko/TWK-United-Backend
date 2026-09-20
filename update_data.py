@@ -23,59 +23,25 @@ HEADERS = {
 }
 
 
+# ============================================================
+# 2026/27 PREMIER LEAGUE SEASON
+# ============================================================
+
 def get_current_season():
-    print("🔴 Getting current Premier League season...")
+    # 2026/27 Premier League PulseLive season ID
+    season_id = 841
+
+    print("🔴 Using Premier League 2026/27 season...")
     print("=" * 50)
+    print("✅ Season: 2026/27")
+    print(f"✅ Season ID: {season_id}")
 
-    url = f"{BASE_URL}/competitions/1/compseasons"
+    return season_id
 
-    params = {
-        "page": 0,
-        "pageSize": 100,
-    }
 
-    response = requests.get(
-        url,
-        params=params,
-        headers=HEADERS,
-        timeout=30,
-    )
-
-    print(f"Season API HTTP Status: {response.status_code}")
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    seasons = data.get("content", [])
-
-    if not seasons:
-        raise RuntimeError(
-            "No Premier League seasons returned."
-        )
-
-    for season in seasons:
-        label = str(
-            season.get("label", "")
-        )
-
-        if "2026/27" in label:
-            season_id = int(
-                float(season["id"])
-            )
-
-            print(
-                f"✅ 2026/27 Found "
-                f"(ID {season_id})"
-            )
-
-            return season_id
-
-    raise RuntimeError(
-        "2026/27 Premier League season "
-        "was not found."
-    )
-
+# ============================================================
+# GET FIXTURES
+# ============================================================
 
 def get_fixtures(season_id):
     print()
@@ -90,6 +56,7 @@ def get_fixtures(season_id):
     page_size = 40
 
     while True:
+
         params = {
             "comps": 1,
             "compSeasons": season_id,
@@ -120,9 +87,13 @@ def get_fixtures(season_id):
             print(
                 "❌ Fixture request failed."
             )
+
             print(
-                f"Response: "
-                f"{response.text[:1000]}"
+                "Response:"
+            )
+
+            print(
+                response.text[:2000]
             )
 
         response.raise_for_status()
@@ -141,7 +112,9 @@ def get_fixtures(season_id):
         if not content:
             break
 
-        all_fixtures.extend(content)
+        all_fixtures.extend(
+            content
+        )
 
         page_info = data.get(
             "pageInfo",
@@ -153,9 +126,15 @@ def get_fixtures(season_id):
         )
 
         if num_pages is not None:
+
             try:
-                if page + 1 >= int(num_pages):
+
+                if (
+                    page + 1
+                    >= int(num_pages)
+                ):
                     break
+
             except Exception:
                 pass
 
@@ -166,9 +145,13 @@ def get_fixtures(season_id):
 
         # Safety limit
         if page >= 20:
+            print(
+                "⚠️ Safety page limit reached."
+            )
             break
 
     print()
+
     print(
         f"Total fixtures received: "
         f"{len(all_fixtures)}"
@@ -177,7 +160,12 @@ def get_fixtures(season_id):
     return all_fixtures
 
 
+# ============================================================
+# TEAM NAME
+# ============================================================
+
 def get_team_name(team):
+
     if not team:
         return ""
 
@@ -189,40 +177,69 @@ def get_team_name(team):
     )
 
 
+# ============================================================
+# KICKOFF TIME
+# ============================================================
+
 def parse_kickoff(fixture):
-    kickoff = fixture.get("kickoff")
+
+    kickoff = fixture.get(
+        "kickoff"
+    )
 
     if not kickoff:
         return None
 
-    millis = kickoff.get("millis")
+    # Primary method
+    millis = kickoff.get(
+        "millis"
+    )
 
     if millis:
+
         try:
+
             return datetime.fromtimestamp(
                 int(millis) / 1000,
                 tz=timezone.utc,
             )
+
         except Exception:
             pass
 
-    iso = kickoff.get("iso")
+    # Fallback method
+    iso = kickoff.get(
+        "iso"
+    )
 
     if iso:
+
         try:
+
             return datetime.fromisoformat(
-                iso.replace("Z", "+00:00")
+                iso.replace(
+                    "Z",
+                    "+00:00"
+                )
             )
+
         except Exception:
             pass
 
     return None
 
 
+# ============================================================
+# FIND NEXT MANCHESTER UNITED MATCH
+# ============================================================
+
 def find_next_manchester_united_fixture(
     fixtures
 ):
-    now = datetime.now(timezone.utc)
+
+    now = datetime.now(
+        timezone.utc
+    )
 
     future_matches = []
 
@@ -256,8 +273,11 @@ def find_next_manchester_united_fixture(
             ):
                 continue
 
-            if team_entry.get("home"):
+            if team_entry.get(
+                "home"
+            ):
                 home = team_entry
+
             else:
                 away = team_entry
 
@@ -271,6 +291,7 @@ def find_next_manchester_united_fixture(
         if not kickoff:
             continue
 
+        # Ignore matches that already started/finished
         if kickoff <= now:
             continue
 
@@ -287,7 +308,8 @@ def find_next_manchester_united_fixture(
         )
 
     future_matches.sort(
-        key=lambda item: item["kickoff"]
+        key=lambda item:
+        item["kickoff"]
     )
 
     if not future_matches:
@@ -296,13 +318,27 @@ def find_next_manchester_united_fixture(
     return future_matches[0]
 
 
+# ============================================================
+# BUILD NEXT MATCH JSON
+# ============================================================
+
 def build_result(item):
-    fixture = item["fixture"]
 
-    home = item["home"]
-    away = item["away"]
+    fixture = item[
+        "fixture"
+    ]
 
-    kickoff = item["kickoff"]
+    home = item[
+        "home"
+    ]
+
+    away = item[
+        "away"
+    ]
+
+    kickoff = item[
+        "kickoff"
+    ]
 
     home_team = home.get(
         "team",
@@ -332,7 +368,20 @@ def build_result(item):
         away_team
     )
 
+    # Try multiple possible venue fields
+    venue_name = (
+        ground.get("name")
+        or ground.get("shortName")
+        or ""
+    )
+
+    venue_city = (
+        ground.get("city")
+        or ""
+    )
+
     return {
+
         "fixtureId": fixture.get(
             "id"
         ),
@@ -373,28 +422,43 @@ def build_result(item):
             .get("shortName")
         ),
 
-        "venue": ground.get(
-            "name",
-            ""
-        ),
+        "venue": venue_name,
 
-        "city": ground.get(
-            "city",
-            ""
-        ),
+        "city": venue_city,
     }
 
 
+# ============================================================
+# MAIN
+# ============================================================
+
 def main():
 
-    print("🔴 TWK United Data Updater")
+    print(
+        "🔴 TWK United Data Updater"
+    )
+
     print("=" * 50)
 
-    season_id = get_current_season()
+    # --------------------------------------------------------
+    # 1. Get season
+    # --------------------------------------------------------
+
+    season_id = (
+        get_current_season()
+    )
+
+    # --------------------------------------------------------
+    # 2. Get fixtures
+    # --------------------------------------------------------
 
     fixtures = get_fixtures(
         season_id
     )
+
+    # --------------------------------------------------------
+    # 3. Find next Manchester United match
+    # --------------------------------------------------------
 
     next_match = (
         find_next_manchester_united_fixture(
@@ -402,34 +466,48 @@ def main():
         )
     )
 
+    # --------------------------------------------------------
+    # 4. Base JSON
+    # --------------------------------------------------------
+
     result = {
-        "updatedAt": datetime.now(
-            timezone.utc
-        ).isoformat(),
 
-        "source": (
-            "Premier League "
-            "PulseLive Public Data"
-        ),
+        "updatedAt":
+            datetime.now(
+                timezone.utc
+            ).isoformat(),
 
-        "nextMatch": None,
+        "source":
+            "Premier League PulseLive Public Data",
+
+        "nextMatch":
+            None,
     }
+
+    # --------------------------------------------------------
+    # 5. No match
+    # --------------------------------------------------------
 
     if not next_match:
 
         print()
+
         print(
             "⚠️ No upcoming "
             "Manchester United "
             "fixture found."
         )
 
+    # --------------------------------------------------------
+    # 6. Match found
+    # --------------------------------------------------------
+
     else:
 
-        result["nextMatch"] = (
-            build_result(
-                next_match
-            )
+        result[
+            "nextMatch"
+        ] = build_result(
+            next_match
         )
 
         match = result[
@@ -437,7 +515,11 @@ def main():
         ]
 
         print()
-        print("✅ NEXT MATCH FOUND")
+
+        print(
+            "✅ NEXT MATCH FOUND"
+        )
+
         print("=" * 50)
 
         print(
@@ -465,6 +547,20 @@ def main():
             f"{match['city']}"
         )
 
+        print(
+            f"🆔 ID : "
+            f"{match['fixtureId']}"
+        )
+
+        print(
+            f"⏱ Timestamp : "
+            f"{match['timestamp']}"
+        )
+
+    # --------------------------------------------------------
+    # 7. Save JSON
+    # --------------------------------------------------------
+
     OUTPUT_FILE.write_text(
         json.dumps(
             result,
@@ -475,11 +571,13 @@ def main():
     )
 
     print()
+
     print(
         "✅ twk_data.json created"
     )
 
     print()
+
     print(
         json.dumps(
             result,
@@ -488,6 +586,10 @@ def main():
         )
     )
 
+
+# ============================================================
+# START
+# ============================================================
 
 if __name__ == "__main__":
     main()
