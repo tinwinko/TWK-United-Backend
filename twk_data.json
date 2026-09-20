@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-09-20T16:17:30.369046+00:00",
+  "updatedAt": "2026-09-20T20:35:30.260907+00:00",
   "source": "Premier League PulseLive Public Data",
   "nextMatch": {
     "fixtureId": 128981.0,
@@ -40,16 +40,5 @@
     "venue": "Old Trafford",
     "city": "Manchester"
   },
-  "liveMatch": {
-    "fixtureId": 128967.0,
-    "status": "LIVE",
-    "minute": "45+1'00",
-    "homeTeam": "Fulham",
-    "awayTeam": "Manchester United",
-    "homeScore": 0.0,
-    "awayScore": 0.0,
-    "competition": "Premier League",
-    "venue": "Craven Cottage",
-    "city": "London"
-  }
+  "liveMatch": null
 }
