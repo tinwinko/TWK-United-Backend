@@ -243,6 +243,9 @@ def find_next_manchester_united_fixture(
 
     future_matches = []
 
+    print()
+    print("🔎 Checking Manchester United fixtures...")
+
     for fixture in fixtures:
 
         teams = fixture.get(
@@ -256,32 +259,57 @@ def find_next_manchester_united_fixture(
         home = None
         away = None
 
+        # PulseLive normally provides a boolean "home" field.
+        # Only treat explicit True/False as home/away.
         for team_entry in teams:
 
-            team = team_entry.get(
-                "team",
-                {}
-            )
+            home_flag = team_entry.get("home")
 
-            team_name = get_team_name(
-                team
-            )
-
-            if (
-                "Manchester United"
-                not in team_name
-            ):
-                continue
-
-            if team_entry.get(
-                "home"
-            ):
+            if home_flag is True:
                 home = team_entry
-
-            else:
+            elif home_flag is False:
                 away = team_entry
 
-        if not home and not away:
+        # Some responses may not contain the home flag.
+        # PulseLive fixture responses normally keep home first
+        # and away second, so use that as a safe fallback.
+        if home is None or away is None:
+            home = teams[0]
+            away = teams[1]
+
+        home_team = home.get(
+            "team",
+            {}
+        )
+
+        away_team = away.get(
+            "team",
+            {}
+        )
+
+        home_name = get_team_name(
+            home_team
+        )
+
+        away_name = get_team_name(
+            away_team
+        )
+
+        # Match the club name case-insensitively.
+        home_is_united = (
+            "manchester united"
+            in home_name.lower()
+        )
+
+        away_is_united = (
+            "manchester united"
+            in away_name.lower()
+        )
+
+        if not (
+            home_is_united
+            or away_is_united
+        ):
             continue
 
         kickoff = parse_kickoff(
@@ -289,13 +317,19 @@ def find_next_manchester_united_fixture(
         )
 
         if not kickoff:
+            print(
+                f"⚠️ {home_name} vs {away_name}: "
+                "kickoff time not found."
+            )
             continue
 
-        # Ignore matches that already started/finished
+        print(
+            f"  • {home_name} vs {away_name} "
+            f"— {kickoff.isoformat()}"
+        )
+
+        # Only future kickoffs can be NEXT MATCH.
         if kickoff <= now:
-            continue
-
-        if not home or not away:
             continue
 
         future_matches.append(
