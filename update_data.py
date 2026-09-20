@@ -1,244 +1,124 @@
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 
-
+# ESPN Premier League
 ESPN_URL = (
     "https://site.api.espn.com/apis/site/v2/"
-    "sports/soccer/eng.1/scoreboard"
+    "sports/soccer/eng.1/teams/360/schedule"
 )
 
 OUTPUT_FILE = Path("twk_data.json")
 
-SEARCH_DAYS = 120
-CHUNK_DAYS = 7
 
-
-def get_scoreboard(start_date, end_date):
-
-    params = {
-        "dates": (
-            f"{start_date.strftime('%Y%m%d')}-"
-            f"{end_date.strftime('%Y%m%d')}"
-        ),
-        "limit": 100
-    }
-
-    print(
-        f"Searching {params['dates']}..."
-    )
+def get_schedule():
+    print("🔴 TWK United Data Updater")
+    print("=" * 50)
+    print("Fetching Manchester United schedule from ESPN...")
 
     response = requests.get(
         ESPN_URL,
-        params=params,
-        timeout=30
+        timeout=30,
+        headers={
+            "User-Agent": "TWK-United/1.0"
+        }
     )
 
+    print(f"HTTP Status: {response.status_code}")
     response.raise_for_status()
 
     return response.json()
 
 
 def main():
+    try:
+        data = get_schedule()
+    except Exception as error:
+        print(f"❌ ESPN request failed: {error}")
+        raise
 
-    print("🔴 TWK United Data Updater")
-    print("=" * 50)
+    events = data.get("events", [])
 
-    now = datetime.now(timezone.utc)
+    print(f"Total events received: {len(events)}")
 
-    search_start = now.date()
-
-    search_end = (
-        search_start +
-        timedelta(days=SEARCH_DAYS)
-    )
-
-    all_events = []
-
-    current_date = search_start
-
-    while current_date < search_end:
-
-        chunk_end = min(
-            current_date +
-            timedelta(days=CHUNK_DAYS - 1),
-            search_end
-        )
-
-        try:
-
-            data = get_scoreboard(
-                current_date,
-                chunk_end
-            )
-
-            events = data.get(
-                "events",
-                []
-            )
-
-            print(
-                f"  → {len(events)} event(s)"
-            )
-
-            all_events.extend(events)
-
-        except requests.HTTPError as error:
-
-            print(
-                f"⚠️ Request failed: {error}"
-            )
-
-        current_date = (
-            chunk_end +
-            timedelta(days=1)
-        )
-
-
-    print()
-    print(
-        f"Total events collected: "
-        f"{len(all_events)}"
-    )
-
+    now_timestamp = int(datetime.now(timezone.utc).timestamp())
 
     future_matches = []
 
-    now_timestamp = int(
-        now.timestamp()
-    )
+    for event in events:
+        event_date = event.get("date")
 
+        if not event_date:
+            continue
 
-    for event in all_events:
+        try:
+            match_time = datetime.fromisoformat(
+                event_date.replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
 
-        competitions = event.get(
-            "competitions",
-            []
-        )
+        # Only future matches
+        if int(match_time.timestamp()) <= now_timestamp:
+            continue
+
+        competitions = event.get("competitions", [])
 
         if not competitions:
             continue
 
         competition = competitions[0]
-
-        competitors = competition.get(
-            "competitors",
-            []
-        )
+        competitors = competition.get("competitors", [])
 
         home = None
         away = None
 
-        for team in competitors:
-
-            if team.get("homeAway") == "home":
-                home = team
-
-            elif team.get("homeAway") == "away":
-                away = team
+        for competitor in competitors:
+            if competitor.get("homeAway") == "home":
+                home = competitor
+            elif competitor.get("homeAway") == "away":
+                away = competitor
 
         if not home or not away:
             continue
 
-
-        home_team = home.get(
-            "team",
-            {}
-        )
-
-        away_team = away.get(
-            "team",
-            {}
-        )
+        home_team = home.get("team", {})
+        away_team = away.get("team", {})
 
         home_name = home_team.get(
             "displayName",
-            ""
+            home_team.get("name", "")
         )
 
         away_name = away_team.get(
             "displayName",
-            ""
+            away_team.get("name", "")
         )
 
-
-        # Manchester United only
-        if (
-            "Manchester United" not in home_name
-            and
-            "Manchester United" not in away_name
-        ):
-            continue
-
-
-        event_date = event.get(
-            "date"
-        )
-
-        if not event_date:
-            continue
-
-
-        try:
-
-            match_time = datetime.fromisoformat(
-                event_date.replace(
-                    "Z",
-                    "+00:00"
-                )
-            )
-
-        except ValueError:
-
-            continue
-
-
-        if (
-            int(match_time.timestamp())
-            <= now_timestamp
-        ):
-            continue
-
-
-        future_matches.append(
-            {
-                "event": event,
-                "competition": competition,
-                "home": home,
-                "away": away,
-                "match_time": match_time
-            }
-        )
-
+        future_matches.append({
+            "event": event,
+            "competition": competition,
+            "home": home,
+            "away": away,
+            "match_time": match_time,
+            "home_name": home_name,
+            "away_name": away_name
+        })
 
     future_matches.sort(
-        key=lambda item:
-        item["match_time"]
+        key=lambda item: item["match_time"]
     )
 
-
     result = {
-        "updatedAt":
-            datetime.now(
-                timezone.utc
-            ).isoformat(),
-
-        "source":
-            "ESPN Public Soccer API",
-
-        "nextMatch":
-            None
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "source": "ESPN Public Soccer API",
+        "nextMatch": None
     }
 
-
     if not future_matches:
-
-        print()
-        print(
-            "❌ No upcoming Manchester United match found."
-        )
+        print("⚠️ No future Manchester United match found.")
 
         OUTPUT_FILE.write_text(
             json.dumps(
@@ -249,12 +129,8 @@ def main():
             encoding="utf-8"
         )
 
-        print(
-            "✅ twk_data.json created"
-        )
-
+        print("✅ twk_data.json created")
         return
-
 
     item = future_matches[0]
 
@@ -264,98 +140,84 @@ def main():
     away = item["away"]
     match_time = item["match_time"]
 
-
-    home_team = home.get(
-        "team",
-        {}
-    )
-
-    away_team = away.get(
-        "team",
-        {}
-    )
-
+    home_team = home.get("team", {})
+    away_team = away.get("team", {})
 
     # Venue
     venue_name = ""
     venue_city = ""
 
-    venue = competition.get(
-        "venue"
-    )
+    venue = competition.get("venue")
 
     if venue:
-
         venue_name = venue.get(
             "fullName",
+            venue.get("displayName", "")
+        )
+
+        address = venue.get("address", {})
+
+        if address:
+            venue_city = address.get("city", "")
+
+    # Competition name
+    competition_name = ""
+
+    if competition.get("league"):
+        competition_name = competition["league"].get(
+            "name",
             ""
         )
 
-        address = venue.get(
-            "address",
-            {}
-        )
-
-        venue_city = address.get(
-            "city",
-            ""
-        )
-
+    if not competition_name:
+        competition_name = "Premier League"
 
     result["nextMatch"] = {
+        "fixtureId": event.get("id"),
 
-        "fixtureId":
-            event.get("id"),
+        "dateUtc": event.get("date"),
 
-        "dateUtc":
-            event.get("date"),
+        "timestamp": int(
+            match_time.timestamp()
+        ),
 
-        "timestamp":
-            int(
-                match_time.timestamp()
-            ),
+        "status": event.get(
+            "status",
+            {}
+        ).get(
+            "type",
+            {}
+        ).get(
+            "name"
+        ),
 
-        "status":
-            event
-            .get("status", {})
-            .get("type", {})
-            .get("name"),
+        "competition": competition_name,
 
-        "competition":
-            "Premier League",
+        "round": event.get(
+            "season",
+            {}
+        ).get(
+            "slug"
+        ),
 
-        "round":
-            event
-            .get("season", {})
-            .get("slug"),
+        "homeTeam": home_team.get(
+            "displayName",
+            home_team.get("name", "")
+        ),
 
-        "homeTeam":
-            home_team.get(
-                "displayName"
-            ),
+        "awayTeam": away_team.get(
+            "displayName",
+            away_team.get("name", "")
+        ),
 
-        "awayTeam":
-            away_team.get(
-                "displayName"
-            ),
+        "homeLogo": home_team.get("logo"),
 
-        "homeLogo":
-            home_team.get(
-                "logo"
-            ),
+        "awayLogo": away_team.get("logo"),
 
-        "awayLogo":
-            away_team.get(
-                "logo"
-            ),
+        "venue": venue_name,
 
-        "venue":
-            venue_name,
-
-        "city":
-            venue_city
+        "city": venue_city
     }
-
 
     OUTPUT_FILE.write_text(
         json.dumps(
@@ -366,11 +228,31 @@ def main():
         encoding="utf-8"
     )
 
-
     print()
     print("✅ NEXT MATCH FOUND")
     print("=" * 50)
 
+    print(
+        f"🏠 Home : "
+        f"{result['nextMatch']['homeTeam']}"
+    )
+
+    print(
+        f"✈️ Away : "
+        f"{result['nextMatch']['awayTeam']}"
+    )
+
+    print(
+        f"📅 Date : "
+        f"{result['nextMatch']['dateUtc']}"
+    )
+
+    print(
+        f"🏟 Venue: "
+        f"{result['nextMatch']['venue']}"
+    )
+
+    print()
     print(
         json.dumps(
             result,
