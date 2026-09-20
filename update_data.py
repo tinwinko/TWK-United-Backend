@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -29,47 +30,62 @@ def get_next_fixture():
 
     data = response.json()
 
-    matches = data.get("response", [])
-
-    if not matches:
-        return None
-
-    return matches[0]
+    return data.get("response", [])
 
 
 def main():
     print("🔴 TWK United Data Updater")
     print("Getting next Manchester United fixture...")
 
-    fixture = get_next_fixture()
+    fixtures = get_next_fixture()
 
-    if fixture is None:
-        print("No upcoming fixture found.")
+    # Always create twk_data.json
+    result = {
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "nextMatch": None
+    }
+
+    if not fixtures:
+        print("⚠️ No upcoming fixture found.")
+        print("Creating empty fixture data file.")
+
+        OUTPUT_FILE.write_text(
+            json.dumps(result, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
+        print("✅ twk_data.json created")
+        print(json.dumps(result, indent=2, ensure_ascii=False))
         return
 
-    fixture_info = fixture["fixture"]
-    teams = fixture["teams"]
-    league = fixture["league"]
+    fixture = fixtures[0]
 
-    result = {
-        "updatedAt": fixture_info.get("date"),
-        "nextMatch": {
-            "fixtureId": fixture_info.get("id"),
-            "dateUtc": fixture_info.get("date"),
-            "timestamp": fixture_info.get("timestamp"),
-            "competition": league.get("name"),
-            "round": league.get("round"),
-            "homeTeam": teams["home"].get("name"),
-            "awayTeam": teams["away"].get("name"),
-            "homeLogo": teams["home"].get("logo"),
-            "awayLogo": teams["away"].get("logo"),
-            "venue": fixture_info.get("venue", {}).get("name"),
-            "city": fixture_info.get("venue", {}).get("city")
-        }
+    fixture_info = fixture.get("fixture", {})
+    teams = fixture.get("teams", {})
+    league = fixture.get("league", {})
+    venue = fixture_info.get("venue") or {}
+
+    result["nextMatch"] = {
+        "fixtureId": fixture_info.get("id"),
+        "dateUtc": fixture_info.get("date"),
+        "timestamp": fixture_info.get("timestamp"),
+
+        "competition": league.get("name"),
+        "round": league.get("round"),
+
+        "homeTeam": teams.get("home", {}).get("name"),
+        "awayTeam": teams.get("away", {}).get("name"),
+
+        "homeLogo": teams.get("home", {}).get("logo"),
+        "awayLogo": teams.get("away", {}).get("logo"),
+
+        "venue": venue.get("name"),
+        "city": venue.get("city")
     }
 
     OUTPUT_FILE.write_text(
-        json.dumps(result, indent=2, ensure_ascii=False)
+        json.dumps(result, indent=2, ensure_ascii=False),
+        encoding="utf-8"
     )
 
     print("✅ twk_data.json created")
