@@ -32,7 +32,7 @@ jobs:
         run: |
           python goal_checker.py
 
-        - name: Save state
+      - name: Save state
         run: |
           if [ -f state.json ]; then
             git config user.name "github-actions[bot]"
