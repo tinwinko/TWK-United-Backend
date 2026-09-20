@@ -1,28 +1,38 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
 
-API_URL = "https://v3.football.api-sports.io/fixtures"
 
+API_URL = "https://v3.football.api-sports.io/fixtures"
 TEAM_ID = 33
-PREMIER_LEAGUE_ID = 39
-CURRENT_SEASON = 2026
 
 OUTPUT_FILE = Path("twk_data.json")
 
 
-def api_request(params):
+def get_fixtures():
+
     api_key = os.environ["API_FOOTBALL_KEY"]
+
+    now = datetime.now(timezone.utc)
+
+    from_date = now.date()
+    to_date = (now + timedelta(days=120)).date()
+
+    print(f"Searching fixtures from {from_date} to {to_date}...")
 
     response = requests.get(
         API_URL,
         headers={
             "x-apisports-key": api_key
         },
-        params=params,
+        params={
+            "team": TEAM_ID,
+            "from": str(from_date),
+            "to": str(to_date)
+        },
         timeout=30
     )
 
@@ -32,58 +42,27 @@ def api_request(params):
 
     if data.get("errors"):
         print("⚠️ API errors:")
-        print(json.dumps(data["errors"], indent=2))
-
-    return data
-
-
-def get_next_fixture():
-
-    # First: direct team + next request
-    print("1️⃣ Trying team=33&next=10...")
-
-    data = api_request({
-        "team": TEAM_ID,
-        "next": 10
-    })
-
-    fixtures = data.get("response", [])
+        print(
+            json.dumps(
+                data["errors"],
+                indent=2,
+                ensure_ascii=False
+            )
+        )
 
     print(
-        f"API returned {len(fixtures)} fixture(s)"
+        f"API returned {data.get('results', 0)} fixture(s)"
     )
 
-    if fixtures:
-        return fixtures
-
-
-    # Second: Premier League 2026 season
-    print(
-        "2️⃣ Trying Premier League 2026 "
-        "with team=33..."
-    )
-
-    data = api_request({
-        "league": PREMIER_LEAGUE_ID,
-        "season": CURRENT_SEASON,
-        "team": TEAM_ID
-    })
-
-    fixtures = data.get("response", [])
-
-    print(
-        f"API returned {len(fixtures)} fixture(s)"
-    )
-
-    return fixtures
+    return data.get("response", [])
 
 
 def main():
 
     print("🔴 TWK United Data Updater")
-    print("=" * 40)
+    print("=" * 45)
 
-    fixtures = get_next_fixture()
+    fixtures = get_fixtures()
 
     result = {
         "updatedAt": datetime.now(
@@ -92,35 +71,11 @@ def main():
         "nextMatch": None
     }
 
-    if not fixtures:
-
-        print()
-        print(
-            "❌ No fixture returned by API."
-        )
-
-        OUTPUT_FILE.write_text(
-            json.dumps(
-                result,
-                indent=2,
-                ensure_ascii=False
-            ),
-            encoding="utf-8"
-        )
-
-        print(
-            "✅ twk_data.json created"
-        )
-
-        return
-
-
-    # Find the first future fixture
     now_timestamp = int(
         datetime.now(timezone.utc).timestamp()
     )
 
-    future_fixture = None
+    future_fixtures = []
 
     for fixture in fixtures:
 
@@ -133,28 +88,58 @@ def main():
             "timestamp"
         )
 
-        if timestamp and timestamp > now_timestamp:
+        status = (
+            fixture_info
+            .get("status", {})
+            .get("short", "")
+        )
 
-            future_fixture = fixture
-            break
+        if (
+            timestamp
+            and timestamp > now_timestamp
+            and status not in ["CANC", "PST"]
+        ):
+            future_fixtures.append(fixture)
 
 
-    # If API already returned next fixture
-    if future_fixture is None:
-        future_fixture = fixtures[0]
+    if not future_fixtures:
+
+        print()
+        print("❌ No upcoming fixture found.")
+
+        OUTPUT_FILE.write_text(
+            json.dumps(
+                result,
+                indent=2,
+                ensure_ascii=False
+            ),
+            encoding="utf-8"
+        )
+
+        print("✅ twk_data.json created")
+
+        return
 
 
-    fixture_info = future_fixture.get(
+    # Sort by kickoff time
+    future_fixtures.sort(
+        key=lambda fixture:
+            fixture["fixture"]["timestamp"]
+    )
+
+    fixture = future_fixtures[0]
+
+    fixture_info = fixture.get(
         "fixture",
         {}
     )
 
-    teams = future_fixture.get(
+    teams = fixture.get(
         "teams",
         {}
     )
 
-    league = future_fixture.get(
+    league = fixture.get(
         "league",
         {}
     )
@@ -175,6 +160,11 @@ def main():
         "timestamp":
             fixture_info.get("timestamp"),
 
+        "status":
+            fixture_info
+            .get("status", {})
+            .get("short"),
+
         "competition":
             league.get("name"),
 
@@ -182,24 +172,24 @@ def main():
             league.get("round"),
 
         "homeTeam":
-            teams.get("home", {}).get(
-                "name"
-            ),
+            teams
+            .get("home", {})
+            .get("name"),
 
         "awayTeam":
-            teams.get("away", {}).get(
-                "name"
-            ),
+            teams
+            .get("away", {})
+            .get("name"),
 
         "homeLogo":
-            teams.get("home", {}).get(
-                "logo"
-            ),
+            teams
+            .get("home", {})
+            .get("logo"),
 
         "awayLogo":
-            teams.get("away", {}).get(
-                "logo"
-            ),
+            teams
+            .get("away", {})
+            .get("logo"),
 
         "venue":
             venue.get("name"),
@@ -220,8 +210,8 @@ def main():
 
 
     print()
-    print("✅ twk_data.json created")
-    print("=" * 40)
+    print("✅ NEXT MATCH FOUND")
+    print("=" * 45)
 
     print(
         json.dumps(
