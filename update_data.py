@@ -352,6 +352,176 @@ def find_next_manchester_united_fixture(
     return future_matches[0]
 
 
+
+# ============================================================
+# FIND LIVE MANCHESTER UNITED MATCH
+# ============================================================
+
+def get_score(team_entry):
+    score = team_entry.get("score")
+
+    if isinstance(score, dict):
+        value = (
+            score.get("goals")
+            if score.get("goals") is not None
+            else score.get("display")
+        )
+        return value if value is not None else 0
+
+    if score is None:
+        return 0
+
+    return score
+
+
+def get_live_minute(fixture):
+    clock = fixture.get("clock") or {}
+
+    label = (
+        clock.get("label")
+        or clock.get("display")
+        or clock.get("mins")
+    )
+
+    if label is not None:
+        return str(label)
+
+    secs = clock.get("secs")
+    if secs is not None:
+        try:
+            return f"{max(0, int(secs) // 60)}'"
+        except Exception:
+            pass
+
+    return ""
+
+
+def is_live_fixture(fixture):
+    status = fixture.get("status")
+
+    if isinstance(status, dict):
+        status_value = (
+            status.get("code")
+            or status.get("short")
+            or status.get("type")
+            or status.get("name")
+        )
+    else:
+        status_value = status
+
+    if status_value is None:
+        return False
+
+    return str(status_value).strip().upper() in {
+        "L",
+        "LIVE",
+        "1H",
+        "2H",
+        "HT",
+        "ET",
+        "P",
+        "PEN",
+    }
+
+
+def find_live_manchester_united_fixture(fixtures):
+    print()
+    print("🔴 Checking Manchester United LIVE match...")
+
+    for fixture in fixtures:
+        teams = fixture.get("teams", [])
+
+        if len(teams) < 2:
+            continue
+
+        home = None
+        away = None
+
+        for team_entry in teams:
+            home_flag = team_entry.get("home")
+
+            if home_flag is True:
+                home = team_entry
+            elif home_flag is False:
+                away = team_entry
+
+        if home is None or away is None:
+            home = teams[0]
+            away = teams[1]
+
+        home_team = home.get("team", {})
+        away_team = away.get("team", {})
+
+        home_name = get_team_name(home_team)
+        away_name = get_team_name(away_team)
+
+        united_in_match = (
+            "manchester united" in home_name.lower()
+            or "manchester united" in away_name.lower()
+        )
+
+        if not united_in_match:
+            continue
+
+        status = fixture.get("status")
+
+        if not is_live_fixture(fixture):
+            continue
+
+        competition = fixture.get("competition", {})
+        ground = fixture.get("ground", {})
+
+        venue_name = (
+            ground.get("name")
+            or ground.get("shortName")
+            or ""
+        )
+
+        venue_city = ground.get("city") or ""
+
+        minute = get_live_minute(fixture)
+
+        live_match = {
+            "fixtureId": fixture.get("id"),
+            "status": "LIVE",
+            "minute": minute,
+            "homeTeam": home_name,
+            "awayTeam": away_name,
+            "homeScore": get_score(home),
+            "awayScore": get_score(away),
+            "competition": competition.get(
+                "name",
+                "Premier League"
+            ),
+            "venue": venue_name,
+            "city": venue_city,
+        }
+
+        print()
+        print("🔴 LIVE MATCH FOUND")
+        print("=" * 50)
+        print(
+            f"🏠 Home : {live_match['homeTeam']} "
+            f"{live_match['homeScore']}"
+        )
+        print(
+            f"✈️ Away : {live_match['awayTeam']} "
+            f"{live_match['awayScore']}"
+        )
+        print(
+            f"⏱ Minute: "
+            f"{live_match['minute'] or 'LIVE'}"
+        )
+        print(
+            f"🆔 ID : {live_match['fixtureId']}"
+        )
+
+        return live_match
+
+    print("ℹ️ No Manchester United live match.")
+    return None
+
+
 # ============================================================
 # BUILD NEXT MATCH JSON
 # ============================================================
@@ -501,7 +671,17 @@ def main():
     )
 
     # --------------------------------------------------------
-    # 4. Base JSON
+    # 4. Find live Manchester United match
+    # --------------------------------------------------------
+
+    live_match = (
+        find_live_manchester_united_fixture(
+            fixtures
+        )
+    )
+
+    # --------------------------------------------------------
+    # 5. Base JSON
     # --------------------------------------------------------
 
     result = {
@@ -516,10 +696,13 @@ def main():
 
         "nextMatch":
             None,
+
+        "liveMatch":
+            None,
     }
 
     # --------------------------------------------------------
-    # 5. No match
+    # 6. No next match
     # --------------------------------------------------------
 
     if not next_match:
@@ -533,7 +716,7 @@ def main():
         )
 
     # --------------------------------------------------------
-    # 6. Match found
+    # 7. Next match found
     # --------------------------------------------------------
 
     else:
@@ -592,7 +775,14 @@ def main():
         )
 
     # --------------------------------------------------------
-    # 7. Save JSON
+    # 8. Save live match
+    # --------------------------------------------------------
+
+    if live_match:
+        result["liveMatch"] = live_match
+
+    # --------------------------------------------------------
+    # 9. Save JSON
     # --------------------------------------------------------
 
     OUTPUT_FILE.write_text(
