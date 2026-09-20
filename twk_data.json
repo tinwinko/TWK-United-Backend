@@ -1,5 +1,43 @@
 {
-  "updatedAt": "2026-09-20T15:55:25.594031+00:00",
+  "updatedAt": "2026-09-20T16:03:48.615771+00:00",
   "source": "Premier League PulseLive Public Data",
-  "nextMatch": null
+  "nextMatch": {
+    "fixtureId": 128981.0,
+    "dateUtc": "2026-10-10T16:30:00+00:00",
+    "timestamp": 1791649800,
+    "status": "U",
+    "competition": "Premier League",
+    "round": {
+      "id": 19766.0,
+      "compSeason": {
+        "label": "English Premier League Season 2026/2027",
+        "competition": {
+          "abbreviation": "EN_PR",
+          "description": "Premier League",
+          "level": "SEN",
+          "source": "",
+          "id": 1.0,
+          "altIds": {
+            "opta": "8"
+          }
+        },
+        "id": 841.0
+      },
+      "gameweek": 6.0,
+      "competitionPhase": {
+        "id": 8163.0,
+        "type": "L",
+        "gameweekRange": [
+          1.0,
+          38.0
+        ]
+      }
+    },
+    "homeTeam": "Manchester United",
+    "awayTeam": "Tottenham Hotspur",
+    "homeLogo": "Man Utd",
+    "awayLogo": "Spurs",
+    "venue": "Old Trafford",
+    "city": "Manchester"
+  }
 }
