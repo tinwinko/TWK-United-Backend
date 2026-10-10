@@ -1,14 +1,14 @@
 {
-  "updatedAt": "2026-10-09T22:28:36.500379+00:00",
+  "updatedAt": "2026-10-10T21:25:08.253501+00:00",
   "source": "Premier League PulseLive Public Data",
   "nextMatch": {
-    "fixtureId": 128981.0,
-    "dateUtc": "2026-10-10T16:30:00+00:00",
-    "timestamp": 1791649800,
+    "fixtureId": 128988.0,
+    "dateUtc": "2026-10-18T13:00:00+00:00",
+    "timestamp": 1792328400,
     "status": "U",
     "competition": "Premier League",
     "round": {
-      "id": 19766.0,
+      "id": 19767.0,
       "compSeason": {
         "label": "English Premier League Season 2026/2027",
         "competition": {
@@ -23,7 +23,7 @@
         },
         "id": 841.0
       },
-      "gameweek": 6.0,
+      "gameweek": 7.0,
       "competitionPhase": {
         "id": 8163.0,
         "type": "L",
@@ -33,12 +33,12 @@
         ]
       }
     },
-    "homeTeam": "Manchester United",
-    "awayTeam": "Tottenham Hotspur",
-    "homeLogo": "Man Utd",
-    "awayLogo": "Spurs",
-    "venue": "Old Trafford",
-    "city": "Manchester"
+    "homeTeam": "Leeds United",
+    "awayTeam": "Manchester United",
+    "homeLogo": "Leeds",
+    "awayLogo": "Man Utd",
+    "venue": "Elland Road",
+    "city": "Leeds"
   },
   "liveMatch": null
 }
