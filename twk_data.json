@@ -1,14 +1,14 @@
 {
-  "updatedAt": "2026-11-07T21:39:23.206395+00:00",
+  "updatedAt": "2026-11-08T21:52:48.638497+00:00",
   "source": "Premier League PulseLive Public Data",
   "nextMatch": {
-    "fixtureId": 129020.0,
-    "dateUtc": "2026-11-08T16:30:00+00:00",
-    "timestamp": 1794155400,
+    "fixtureId": 129029.0,
+    "dateUtc": "2026-11-22T16:30:00+00:00",
+    "timestamp": 1795365000,
     "status": "U",
     "competition": "Premier League",
     "round": {
-      "id": 19770.0,
+      "id": 19771.0,
       "compSeason": {
         "label": "English Premier League Season 2026/2027",
         "competition": {
@@ -23,7 +23,7 @@
         },
         "id": 841.0
       },
-      "gameweek": 10.0,
+      "gameweek": 11.0,
       "competitionPhase": {
         "id": 8163.0,
         "type": "L",
@@ -33,12 +33,12 @@
         ]
       }
     },
-    "homeTeam": "Manchester United",
-    "awayTeam": "Aston Villa",
-    "homeLogo": "Man Utd",
-    "awayLogo": "Aston Villa",
-    "venue": "Old Trafford",
-    "city": "Manchester"
+    "homeTeam": "Liverpool",
+    "awayTeam": "Manchester United",
+    "homeLogo": "Liverpool",
+    "awayLogo": "Man Utd",
+    "venue": "Anfield",
+    "city": "Liverpool"
   },
   "liveMatch": null
 }
